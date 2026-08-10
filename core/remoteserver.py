@@ -157,6 +157,111 @@ def _zet_resolutie(device, w, h) -> bool:
         device, ctypes.byref(dm), None, 0, None) == 0
 
 
+# ----------------------------------------------------------- klembord
+_kernel32 = ctypes.windll.kernel32
+_CF_TEXT = 1
+_CF_UNICODETEXT = 13
+_CF_DIBV5 = 17
+_GMEM_MOVEABLE = 0x0002
+
+
+def lees_klembord_tekst() -> str:
+    """Lees tekstinhoud uit het Windows-klembord."""
+    try:
+        if not _user32.OpenClipboard(None):
+            return ""
+        h = _user32.GetClipboardData(_CF_UNICODETEXT)
+        if not h:
+            _user32.CloseClipboard()
+            return ""
+        p = ctypes.cast(h, ctypes.POINTER(ctypes.c_wchar))
+        tekst = ctypes.wstring_at(p)
+        _user32.CloseClipboard()
+        return tekst
+    except Exception:
+        return ""
+
+
+def zet_klembord_tekst(tekst: str) -> bool:
+    """Schrijf tekst naar het Windows-klembord."""
+    try:
+        if not _user32.OpenClipboard(None):
+            return False
+        _user32.EmptyClipboard()
+        buf = (ctypes.c_wchar * (len(tekst) + 1))(*tekst)
+        h = _kernel32.GlobalAlloc(_GMEM_MOVEABLE, ctypes.sizeof(buf))
+        if not h:
+            _user32.CloseClipboard()
+            return False
+        p = _kernel32.GlobalLock(h)
+        ctypes.memmove(p, buf, ctypes.sizeof(buf))
+        _kernel32.GlobalUnlock(h)
+        _user32.SetClipboardData(_CF_UNICODETEXT, h)
+        _user32.CloseClipboard()
+        return True
+    except Exception:
+        return False
+
+
+def lees_klembord_afbeelding() -> bytes:
+    """Lees afbeeldingsinhoud uit het klembord; retourneert PNG-bytes of lege bytes."""
+    try:
+        if not _user32.OpenClipboard(None):
+            return b""
+        h = _user32.GetClipboardData(_CF_DIBV5)
+        if not h:
+            _user32.CloseClipboard()
+            return b""
+        # DIB-data: skip header en converteer naar PIL
+        from PIL import Image
+        p = ctypes.cast(h, ctypes.POINTER(ctypes.c_char))
+        grootte = _kernel32.GlobalSize(h)
+        dib_data = ctypes.string_at(p, grootte)
+        _user32.CloseClipboard()
+        try:
+            img = Image.frombytes("RGB", (1, 1), b"\x00" * 3)
+            # DIB is BMP-achtig; probeer als BytesIO
+            img_io = io.BytesIO(dib_data)
+            img = Image.open(img_io)
+            out = io.BytesIO()
+            img.save(out, format="PNG")
+            return out.getvalue()
+        except Exception:
+            return b""
+    except Exception:
+        return b""
+
+
+def zet_klembord_afbeelding(png_bytes: bytes) -> bool:
+    """Zet PNG-afbeeldingsdata op het klembord."""
+    try:
+        from PIL import Image
+        img_io = io.BytesIO(png_bytes)
+        img = Image.open(img_io)
+        # Converteer naar BMP voor Windows klembord
+        bmp_io = io.BytesIO()
+        img.save(bmp_io, format="BMP")
+        bmp_data = bmp_io.getvalue()
+        if not bmp_data:
+            return False
+        if not _user32.OpenClipboard(None):
+            return False
+        _user32.EmptyClipboard()
+        h = _kernel32.GlobalAlloc(_GMEM_MOVEABLE, len(bmp_data))
+        if not h:
+            _user32.CloseClipboard()
+            return False
+        p = _kernel32.GlobalLock(h)
+        ctypes.memmove(p, bmp_data, len(bmp_data))
+        _kernel32.GlobalUnlock(h)
+        # BMP op klembord zetten (DIB format)
+        _user32.SetClipboardData(_CF_DIBV5, h)
+        _user32.CloseClipboard()
+        return True
+    except Exception:
+        return False
+
+
 # ------------------------------------------------------------- schermbeeld
 class Scherm:
     """Capture-thread: houdt het nieuwste JPEG-frame + actieve weergave bij."""
@@ -417,6 +522,8 @@ border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer}
  <span class=spacer></span>
  <button id=btnKb>⌨ Toetsenbord</button>
  <button id=btnFs>⛶ Volledig scherm</button>
+ <button id=btnClpGet>📋 Plakken</button>
+ <button id=btnClpSet>💾 Kopieren</button>
  <button id=btnRe>↻ Opnieuw</button>
  <button id=btnOut>🚪 Uitloggen</button>
 </div>
@@ -489,6 +596,47 @@ laadRes();
 var kbWrap=document.getElementById('kbWrap'),kbIn=document.getElementById('kbIn'),kbAan=false;
 document.getElementById('btnKb').onclick=function(){kbAan=!kbAan;
  kbWrap.style.display=kbAan?'block':'none';if(kbAan)kbIn.focus()};
+// klembord-functies: plakken van remote naar browser, kopieren van browser naar remote
+document.getElementById('btnClpGet').onclick=function(){
+ fetch('/clipboard-get').then(function(r){return r.json()}).then(function(d){
+  if(d.type==='text'){navigator.clipboard.writeText(d.data).then(function(){
+   alert('Tekst van remote machine gekopieerd naar klembord')}).catch(function(){
+   alert('Kon niet schrijven naar browser-klembord')})
+  }else if(d.type==='image'){var img=new Image();img.src='data:image/png;base64,'+d.data;
+   img.onload=function(){var c=document.createElement('canvas');c.width=img.width;
+   c.height=img.height;var x=c.getContext('2d');x.drawImage(img,0,0);c.toBlob(function(b){
+    navigator.clipboard.write([new ClipboardItem({'image/png':b})]).then(function(){
+     alert('Afbeelding van remote machine gekopieerd naar klembord')}).catch(function(){
+     alert('Kon niet schrijven naar browser-klembord')})
+   })}}
+  }else{alert('Remote klembord is leeg')}}).catch(function(){
+   alert('Kon remote klembord niet lezen')})};
+document.getElementById('btnClpSet').onclick=function(){
+ navigator.clipboard.read().then(function(items){
+  if(items.length===0){alert('Browser-klembord is leeg');return}
+  var item=items[0],type='';
+  if(item.types.includes('text/plain')){
+   type='text';return item.getType('text/plain').then(function(b){
+    return b.text()}).then(function(txt){
+     return fetch('/clipboard-set',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({type:'text',data:txt})}).then(function(r){
+      return r.json()}).then(function(d){
+       if(d.ok)alert('Tekst naar remote machine gekopieerd');
+       else alert('Kon niet naar remote klembord schrijven')})})
+  }else if(item.types.some(function(t){return t.startsWith('image/')})){
+   var imgType=item.types.find(function(t){return t.startsWith('image/')});
+   return item.getType(imgType).then(function(b){
+    return new Promise(function(res){var r=new FileReader();r.onload=function(){
+     res(r.result.split(',')[1])};r.readAsDataURL(b)})}).then(function(b64){
+     return fetch('/clipboard-set',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({type:'image',data:b64})}).then(function(r){
+      return r.json()}).then(function(d){
+       if(d.ok)alert('Afbeelding naar remote machine gekopieerd');
+       else alert('Kon niet naar remote klembord schrijven')})})
+  }else{alert('Onondersteund klembord-type')}
+ }).catch(function(){alert('Kon browser-klembord niet lezen')})};
 var lastKb='';
 kbIn.addEventListener('input',function(){var v=kbIn.value,i;
  if(v.length>lastKb.length)for(i=lastKb.length;i<v.length;i++){
@@ -794,6 +942,39 @@ class _Handler(BaseHTTPRequestHandler):
         except (OSError, ValueError, shutil.Error) as exc:
             self._stuur_json({"fout": str(exc)}, status=400)
 
+    # ------------------------------------------------------------- klembord
+    def _clipboard_get(self):
+        """Geef huidige klembord-inhoud (tekst of afbeelding als base64)."""
+        tekst = lees_klembord_tekst()
+        if tekst:
+            self._stuur_json({"type": "text", "data": tekst})
+            return
+        afb = lees_klembord_afbeelding()
+        if afb:
+            import base64
+            self._stuur_json({"type": "image", "data": base64.b64encode(afb).decode()})
+        else:
+            self._stuur_json({"type": "leeg", "data": ""})
+
+    def _clipboard_set(self):
+        """Stel klembord in op opgestuurde inhoud."""
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            d = json.loads(self.rfile.read(n) or b"{}")
+            t = d.get("type", "")
+            data = d.get("data", "")
+            if t == "text":
+                ok = zet_klembord_tekst(data)
+            elif t == "image":
+                import base64
+                afb = base64.b64decode(data)
+                ok = zet_klembord_afbeelding(afb)
+            else:
+                ok = False
+            self._stuur_json({"ok": ok})
+        except Exception as exc:
+            self._stuur_json({"fout": str(exc)}, status=400)
+
     # ------------------------------------------------------------- GET
     def do_GET(self):
         pad = self.path.split("?", 1)[0]  # query-string negeren bij routering
@@ -830,6 +1011,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._fs_list()
         elif pad == "/fs/download":
             self._fs_download()
+        elif pad == "/clipboard-get":
+            self._clipboard_get()
         else:
             self.send_error(404)
 
@@ -867,6 +1050,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if pad == "/fs/actie" and self._auth():
             self._fs_actie()
+            return
+        if pad == "/clipboard-set" and self._auth():
+            self._clipboard_set()
             return
         if pad == "/resolutie" and self._auth():
             # echte resolutie van het getoonde beeldscherm (RDP-stijl)
