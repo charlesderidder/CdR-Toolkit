@@ -186,6 +186,9 @@ gebeurt er gewoon niets — de app blijft werken.
 
 ## Release Notes
 
+### v2.4.1 (2026-08-10)
+- Onderhoudsrelease met kleine verbeteringen en stabiliteitsfixes.
+
 ### v2.4.0 (2026-08-10)
 - **Remote Desktop framerate boost**: 30 fps (was 5 fps) — snellere weergave en responsiviteit.
 
