@@ -101,7 +101,7 @@ Verder:
 
 ### Direct de exe
 
-`CharlesOnderhoud.exe` starten — de UAC-prompt verschijnt automatisch
+`CdR-Toolkit.exe` starten — de UAC-prompt verschijnt automatisch
 (de exe is gebouwd met `--uac-admin`). Logs komen in
 `Documenten\CharlesOnderhoud\logs`.
 
@@ -119,7 +119,7 @@ De app biedt aan zichzelf als administrator te herstarten als dat nodig is.
 build_exe.bat
 ```
 
-Resultaat: `dist\CharlesOnderhoud.exe` (één bestand, geen consolevenster,
+Resultaat: `dist\CdR-Toolkit.exe` (één bestand, geen consolevenster,
 vraagt zelf om admin-rechten).
 
 ## Structuur (modulair — makkelijk uit te breiden)
@@ -155,8 +155,8 @@ logs/                   automatisch aangemaakte logbestanden
 2. Bouw de exe: `build_exe.bat`.
 3. Maak het versiebestand: `publiceer.bat` — dit genereert `dist\version.txt`
    met het versienummer en de SHA256-checksum van de exe.
-4. Upload **beide** bestanden naar `https://charlesderidder.nl/downloads/`:
-   - `CharlesOnderhoud.exe`
+4. Upload **beide** bestanden naar `https://charlesderidder.nl/toolkit/`:
+  - `CdR-Toolkit.exe`
    - `version.txt`
 
 Elke installatie ziet dan bij de volgende start (of via de knop) dat er een
@@ -183,3 +183,32 @@ gebeurt er gewoon niets — de app blijft werken.
   bij netwerkshares/gebruikersmappen, verhoogd bij beschermde mappen) en logt
   elke stap in `Documenten\CharlesOnderhoud\logs\updater.log`. Start de app
   na ~30 seconden niet vanzelf? Open dan zelf het bestand opnieuw.
+
+## Release Notes
+
+### v2.4.0 (2026-08-10)
+- **Remote Desktop framerate boost**: 30 fps (was 5 fps) — snellere weergave en responsiviteit.
+
+### v2.3.0
+- Verwijderde onnodig `pip install` stap uit build script (requirements.txt bestaat niet).
+- Verwijderde popup-melding bij startup updatecheck; blauwe downloadteken blijft zichtbaar.
+- Verwijderde "Rasterweergave instellen" uit menubalk (onderdeel van camera-instellingen).
+
+### v2.2.2
+- Executable hernoemd naar `CdR-Toolkit.exe` (was `CdRToolkit.exe`).
+- Update URL aangepast naar `https://charlesderidder.nl/toolkit/CdR-Toolkit.exe`.
+- Bugfix: veilige herstart bij thema-wissel (geen meer _tcl_data-fout).
+- Nieuwe aparte "Camera-instellingen" popup (alleen cameras + Nest + raster); menu's gericht naar deze popup.
+- Startup-updatecheck nu met blauwe download-indicator en beschikbaarheidsmelding.
+
+### v2.2.1
+- **Volledig UI-redesign**: nieuwe centrale menubalk (Bestand/Bewerken/Weergave/Instellingen/Help).
+- Instellingen nu direct bereikbaar via logische submenu's (checkboxes, invoervelden, radio's).
+- Verwijderde aparte instellingenknop (tandwiel) — alles via menubalk.
+- Thema-ondersteuning: Standaard en Hoog contrast met persistente opslag.
+- Help-dialogs: Over, Versie-info, Handleiding, Nieuw in deze versie.
+- Snelle menu-acties voor Office ICS-link en remote-wachtwoord.
+
+### v2.2.0
+- Initiële release: volledige onderhoudstoolkit met menubalk-UI en camera-dashboard.
+

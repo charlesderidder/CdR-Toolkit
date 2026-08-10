@@ -1,7 +1,7 @@
 """Ingebouwde remote-webserver: scherm bekijken én bedienen via de browser.
 
 Volledig zelfvoorzienend — geen RustDesk, RDP of andere software nodig:
-- Schermcapture via Pillow ImageGrab (JPEG-stream, ~5 fps)
+- Schermcapture via Pillow ImageGrab (JPEG-stream, ~30 fps)
 - Webserver via http.server (MJPEG + input-endpoints, login met wachtwoord,
   echte schermresolutie instelbaar (RDP-stijl) en uitlogknop in de werkbalk)
 - Invoerinjectie (muis/toetsenbord) via ctypes: SetCursorPos/mouse_event/keybd_event
@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote_plus, urlparse
 
 POORT = 8765
-FPS = 5
+FPS = 30
 MAX_BREEDTE = 1920          # frames worden tot deze breedte verkleind
 JPEG_KWALITEIT = 55
 # bij start wordt de host-resolutie hierop gezet (dichtstbijzijnde stand als
