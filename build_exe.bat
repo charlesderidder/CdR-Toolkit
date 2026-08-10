@@ -8,5 +8,5 @@ python -m pip install -r requirements.txt
 
 echo [2/4] CdRToolkit.exe bouwen...
 python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin ^
-    --name "CdRToolkit" install.py
+    --name "CdRToolkit" main.py
 pause
