@@ -19,7 +19,7 @@ import urllib.request
 from datetime import datetime, timedelta
 
 VERSION_URL = "https://charlesderidder.nl/toolkit/version.txt"
-EXE_URL = "https://charlesderidder.nl/toolkit/CdRToolkit.exe"
+EXE_URL = "https://charlesderidder.nl/toolkit/CdR-Toolkit.exe"
 
 _HEADERS = {"User-Agent": "CdRToolkit-Updater"}
 
@@ -87,7 +87,7 @@ def _sha256(pad: str) -> str:
 
 def download_update(log, verwachte_sha: str | None = None) -> str | None:
     """Download de nieuwe exe naar %TEMP%; verifieer de checksum indien opgegeven."""
-    doel = os.path.join(tempfile.gettempdir(), "CdRToolkit_update.exe")
+    doel = os.path.join(tempfile.gettempdir(), "CdR-Toolkit_update.exe")
     log(f"Update downloaden van {EXE_URL} ...")
     try:
         req = urllib.request.Request(_met_cb(EXE_URL), headers=_HEADERS)

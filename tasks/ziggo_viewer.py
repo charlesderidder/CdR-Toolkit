@@ -2,7 +2,7 @@
 
 pywebview (WebView2) eist de main thread; die is in de hoofd-app van tkinter.
 Daarom start de app deze module als apart proces:
-    CdRToolkit.exe --ziggo-viewer
+    CdR-Toolkit.exe --ziggo-viewer
 of: python main.py --ziggo-viewer
 
 Het venster laadt ziggogo.tv, verder niets: geen knoppenbalk of overlays.

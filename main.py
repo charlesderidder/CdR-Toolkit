@@ -17,7 +17,7 @@ import calendar
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from core import crypto, settings, updater
 from core.admin import is_admin, reboot_pending, relaunch_as_admin
@@ -38,6 +38,50 @@ ACCENT_H  = "#3f5de0"   # hover
 NAV_ACT   = "#e8edfc"   # actief navigatie-item
 NAV_HOVER = "#f1f3f9"
 KAART     = "#ffffff"
+
+THEMAS = {
+    "standaard": {
+        "BG": "#f3f4f7",
+        "SIDEBAR": "#ffffff",
+        "BORDER": "#e5e7eb",
+        "TEKST": "#1f2937",
+        "MUTED": "#6b7280",
+        "ACCENT": "#4f6ef7",
+        "ACCENT_H": "#3f5de0",
+        "NAV_ACT": "#e8edfc",
+        "NAV_HOVER": "#f1f3f9",
+        "KAART": "#ffffff",
+    },
+    "hoog_contrast": {
+        "BG": "#edf2f7",
+        "SIDEBAR": "#ffffff",
+        "BORDER": "#cbd5e1",
+        "TEKST": "#0f172a",
+        "MUTED": "#475569",
+        "ACCENT": "#1d4ed8",
+        "ACCENT_H": "#1e40af",
+        "NAV_ACT": "#dbeafe",
+        "NAV_HOVER": "#e2e8f0",
+        "KAART": "#ffffff",
+    },
+}
+
+
+def _zet_thema_kleuren(naam: str):
+    """Zet de globale UI-kleuren op basis van het gekozen thema."""
+    pal = THEMAS.get(naam, THEMAS["standaard"])
+    global BG, SIDEBAR, BORDER, TEKST, MUTED, ACCENT, ACCENT_H
+    global NAV_ACT, NAV_HOVER, KAART
+    BG = pal["BG"]
+    SIDEBAR = pal["SIDEBAR"]
+    BORDER = pal["BORDER"]
+    TEKST = pal["TEKST"]
+    MUTED = pal["MUTED"]
+    ACCENT = pal["ACCENT"]
+    ACCENT_H = pal["ACCENT_H"]
+    NAV_ACT = pal["NAV_ACT"]
+    NAV_HOVER = pal["NAV_HOVER"]
+    KAART = pal["KAART"]
 
 STATUS_TEKST = {"pending": "Wachten", "running": "Bezig...",
                 "success": "Geslaagd", "failed": "Mislukt"}
@@ -295,6 +339,8 @@ def _ics_events_van_url(url: str, limiet: int = 40) -> list[dict]:
 class OnderhoudApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.var_thema = tk.StringVar(value=str(settings.get("ui_thema", "standaard")))
+        _zet_thema_kleuren(self.var_thema.get())
         self.title(f"{APP_NAAM} v{__version__}")
         self.geometry("1040x740")
         self.minsize(880, 620)
@@ -305,6 +351,8 @@ class OnderhoudApp(tk.Tk):
         self.ui_queue = queue.Queue()
         self.logger = AppLogger(self.ui_queue)
         self.var_reboot = tk.BooleanVar(value=False)
+        self.var_voorgrond = tk.BooleanVar(
+            value=bool(settings.get("altijd_voorgrond", True)))
         self.var_remote_wan = tk.BooleanVar(value=False)  # UPnP-checkbox remote
         self.status_labels = {}
         self.nav_items = {}      # sleutel -> dict(frame, icon, label, actief)
@@ -316,13 +364,14 @@ class OnderhoudApp(tk.Tk):
 
         self._ziggo_was_actief = False  # vorige status van de TV-viewer
 
+        self._build_menubalk()
         self._build_ui()
         self._toon_pagina("alles")
         self.protocol("WM_DELETE_WINDOW", self._sluiten)
         self.after(100, self._poll_queue)
         self.after(300, self._check_admin)
         self.after(1000, self._check_ziggo_status)
-        self.after(4000, lambda: self._update_check(auto=True))
+        self.after(800, lambda: self._update_check(auto=True, startup=True))
         if self.auto:
             self.after(1000, self._auto_start)
 
@@ -332,6 +381,93 @@ class OnderhoudApp(tk.Tk):
         hoofd.pack(fill="both", expand=True)
         self._build_sidebar(hoofd)
         self._build_content(hoofd)
+
+    def _build_menubalk(self):
+        """Centrale menubalk voor navigatie, instellingen en hulp."""
+        balk = tk.Menu(self)
+
+        bestand = tk.Menu(balk, tearoff=0)
+        bestand.add_command(label="Afsluiten", command=self._sluiten)
+        balk.add_cascade(label="Bestand", menu=bestand)
+
+        bewerken = tk.Menu(balk, tearoff=0)
+        bewerken.add_command(label="Voorkeuren", command=self._toon_instellingen_popup)
+        bewerken.add_separator()
+        bewerken.add_command(label="Office agenda-link instellen...",
+                             command=self._menu_office_ics_instellen)
+        bewerken.add_command(label="Vast remote-wachtwoord instellen...",
+                             command=self._menu_remote_wachtwoord_instellen)
+        balk.add_cascade(label="Bewerken", menu=bewerken)
+
+        weergave = tk.Menu(balk, tearoff=0)
+        thema = tk.Menu(weergave, tearoff=0)
+        thema.add_radiobutton(label="Standaard",
+                              variable=self.var_thema,
+                              value="standaard",
+                              command=self._menu_thema_wijzigen)
+        thema.add_radiobutton(label="Hoog contrast",
+                              variable=self.var_thema,
+                              value="hoog_contrast",
+                              command=self._menu_thema_wijzigen)
+        weergave.add_cascade(label="Thema", menu=thema)
+        balk.add_cascade(label="Weergave", menu=weergave)
+
+        instellingen = tk.Menu(balk, tearoff=0)
+        cfg = tk.Menu(instellingen, tearoff=0)
+        cfg.add_checkbutton(
+            label="Automatisch herstarten na updates",
+            variable=self.var_reboot)
+        cfg.add_checkbutton(
+            label="Vensters altijd op voorgrond",
+            variable=self.var_voorgrond,
+            command=self._sla_voorgrond_op)
+        cfg.add_separator()
+        cfg.add_command(label="Office agenda-link instellen...",
+                        command=self._menu_office_ics_instellen)
+        cfg.add_command(label="Camera's beheren...",
+                        command=self._toon_camera_instellingen_popup)
+        cfg.add_command(label="Google Nest configureren...",
+                        command=self._toon_camera_instellingen_popup)
+        cfg.add_command(label="Remote-wachtwoord instellen...",
+                        command=self._menu_remote_wachtwoord_instellen)
+        instellingen.add_cascade(label="Configuratie instellingen", menu=cfg)
+
+        app_cfg = tk.Menu(instellingen, tearoff=0)
+        app_cfg.add_command(label="Plan automatisch",
+                            command=self._plan_taak)
+        app_cfg.add_command(label="Verwijder planning",
+                            command=self._verwijder_planning)
+        app_cfg.add_separator()
+        app_cfg.add_command(label="Exporteer log",
+                            command=self._exporteer_log)
+        app_cfg.add_command(label="Leeg log",
+                            command=self._leeg_log)
+        app_cfg.add_separator()
+        app_cfg.add_command(label="Herstel Winget",
+                            command=lambda: self._run_action(repair.repair_winget))
+        app_cfg.add_command(label="Herstel Windows Update",
+                            command=lambda: self._run_action(repair.repair_windows_update))
+        app_cfg.add_separator()
+        app_cfg.add_command(label="Zoek naar update",
+                            command=self._check_update_knop)
+        app_cfg.add_command(label="Download handmatig",
+                            command=self._download_handmatig)
+        instellingen.add_cascade(label="Applicatie instellingen", menu=app_cfg)
+
+        instellingen.add_separator()
+        instellingen.add_command(label="Volledige instellingen...",
+                                 command=self._toon_instellingen_popup)
+        balk.add_cascade(label="Instellingen", menu=instellingen)
+
+        help_menu = tk.Menu(balk, tearoff=0)
+        help_menu.add_command(label="Handleiding", command=self._open_handleiding)
+        help_menu.add_command(label="Over deze applicatie", command=self._toon_over_dialog)
+        help_menu.add_command(label="Versie informatie", command=self._toon_versie_info)
+        help_menu.add_command(label="Nieuw in deze versie", command=self._toon_nieuw_in_versie)
+        balk.add_cascade(label="Help", menu=help_menu)
+
+        self.config(menu=balk)
+        self.bind_all("<Control-q>", lambda e: self._sluiten())
 
     def _build_sidebar(self, parent):
         sb = tk.Frame(parent, bg=SIDEBAR, width=205,
@@ -394,12 +530,6 @@ class OnderhoudApp(tk.Tk):
         self.lbl_admin = tk.Label(badges, text="...", bg=BG, fg=MUTED,
                                   font=("Segoe UI", 9))
         self.lbl_admin.pack(side="right")
-        # Tandwiel rechtsboven: opent de instellingen als popup
-        tk.Button(badges, text="⚙", relief="flat", bd=0, bg=BG, fg=MUTED,
-                  activebackground=NAV_HOVER, activeforeground=TEKST,
-                  font=("Segoe UI", 13), cursor="hand2",
-                  command=self._toon_instellingen_popup).pack(
-                      side="right", padx=(8, 0))
         self.lbl_reboot = tk.Label(badges, text="", bg=BG, fg="#b45309",
                                    font=("Segoe UI", 9, "bold"))
         self.lbl_reboot.pack(side="right", padx=12)
@@ -619,8 +749,6 @@ class OnderhoudApp(tk.Tk):
                        variable=self.var_reboot, bg=KAART, fg=TEKST,
                        selectcolor="#ffffff", activebackground=KAART,
                        font=("Segoe UI", 9)).pack(anchor="w")
-        self.var_voorgrond = tk.BooleanVar(
-            value=bool(settings.get("altijd_voorgrond", True)))
         tk.Checkbutton(s1, text="Vensters altijd op voorgrond "
                                 "(Ziggo TV & Eufy-dashboard)",
                        variable=self.var_voorgrond,
@@ -810,6 +938,186 @@ class OnderhoudApp(tk.Tk):
                  anchor="w").pack(fill="x")
         knoprij(s5, [("Zoek naar update", self._check_update_knop),
                      ("Download handmatig", self._download_handmatig)])
+
+        footer = tk.Frame(win, bg=BG)
+        footer.pack(fill="x", padx=12, pady=(0, 10))
+        tk.Button(footer, text="Sluiten", relief="flat", bd=0,
+                  bg=ACCENT, fg="white", activebackground=ACCENT_H,
+                  font=("Segoe UI", 9, "bold"), padx=18, pady=6,
+                  cursor="hand2", command=win.destroy).pack(
+                      anchor="e", pady=(2, 0))
+
+    def _toon_camera_instellingen_popup(self):
+        """Compact popup met alleen camera-gerelateerde instellingen."""
+        if getattr(self, "_cam_win", None) and self._cam_win.winfo_exists():
+            self._cam_win.lift()
+            return
+        win = tk.Toplevel(self)
+        self._cam_win = win
+        # Hergebruik van camerafuncties verwacht _inst_win als parent.
+        self._inst_win = win
+        win.title(f"Camera-instellingen — {APP_NAAM}")
+        win.geometry("620x690")
+        win.minsize(520, 560)
+        win.configure(bg=BG)
+        win.transient(self)
+
+        outer = tk.Frame(win, bg=BG)
+        outer.pack(fill="both", expand=True, padx=12, pady=(10, 6))
+        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0, bd=0)
+        scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        body = tk.Frame(canvas, bg=BG)
+        canvas_window = canvas.create_window((0, 0), window=body, anchor="nw")
+
+        def _body_config(_evt=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _canvas_config(evt):
+            canvas.itemconfigure(canvas_window, width=evt.width)
+
+        body.bind("<Configure>", _body_config)
+        canvas.bind("<Configure>", _canvas_config)
+
+        def _mw(evt):
+            canvas.yview_scroll(int(-evt.delta / 120), "units")
+
+        def _bind_mw(_evt):
+            canvas.bind_all("<MouseWheel>", _mw)
+
+        def _unbind_mw(_evt):
+            canvas.unbind_all("<MouseWheel>")
+
+        canvas.bind("<Enter>", _bind_mw)
+        canvas.bind("<Leave>", _unbind_mw)
+
+        def sectie(titel):
+            sf = tk.LabelFrame(body, text=f"  {titel}  ", bg=KAART, fg=TEKST,
+                               font=("Segoe UI", 8, "bold"), bd=0,
+                               highlightthickness=1,
+                               highlightbackground=BORDER,
+                               padx=10, pady=6, labelanchor="nw")
+            sf.pack(fill="x", pady=(0, 8))
+            return sf
+
+        def knoprij(ouder, items):
+            rij = tk.Frame(ouder, bg=KAART)
+            rij.pack(fill="x", pady=(2, 0))
+            for tekst, cmd in items:
+                b = tk.Button(rij, text=tekst, relief="flat", bd=0,
+                              bg="#eef1f6", fg=TEKST,
+                              activebackground="#dfe5f0",
+                              font=("Segoe UI", 8), padx=8, pady=3,
+                              cursor="hand2", command=cmd)
+                b.pack(side="left", padx=(0, 8), pady=2)
+                self.knoppen.append(b)
+
+        # --------------------------------------- Camera's (Eufy dashboard)
+        sc = sectie("Camera's (Eufy beveiligingsdashboard)")
+        cam_frame = tk.Frame(sc, bg=KAART)
+        cam_frame.pack(fill="x", pady=(0, 2))
+        self.cam_listbox = tk.Listbox(
+            cam_frame, height=5, relief="flat", bg="#f6f7f9", fg=TEKST,
+            font=("Segoe UI", 9), highlightthickness=1,
+            highlightbackground=BORDER, selectbackground=ACCENT,
+            selectforeground="white", exportselection=False,
+            activestyle="none")
+        cam_scroll = ttk.Scrollbar(cam_frame, command=self.cam_listbox.yview)
+        self.cam_listbox.configure(yscrollcommand=cam_scroll.set)
+        cam_scroll.pack(side="right", fill="y")
+        self.cam_listbox.pack(fill="x")
+        tk.Label(sc, text="Inloggegevens in de URL zijn verborgen en worden "
+                          "versleuteld opgeslagen.",
+                 bg=KAART, fg=MUTED, font=("Segoe UI", 8),
+                 anchor="w").pack(fill="x", pady=(2, 0))
+        knoprij(sc, [("Voeg toe", self._cam_toevoegen),
+                     ("Bewerk", self._cam_bewerk),
+                     ("Aan/Uit", self._cam_toggle),
+                     ("Verwijder", self._cam_verwijder),
+                     ("▲ Omhoog", lambda: self._cam_schuif(-1)),
+                     ("▼ Omlaag", lambda: self._cam_schuif(1)),
+                     ("Importeer meerdere", self._cam_importeer)])
+        self._cam_vul_lijst()
+
+        # --------------------------------------- Raster (dashboard)
+        sra = sectie("Rasterweergave (dashboard)")
+        self._raster_knoppen = {}
+        rgrid = tk.Frame(sra, bg=KAART)
+        rgrid.pack(fill="x")
+        for i, (sleutel, label) in enumerate(eufy.RASTER_SJABLONEN):
+            b = tk.Button(rgrid, text=label, relief="flat", bd=0,
+                          bg="#eef1f6", fg=TEKST, activebackground="#dfe5f0",
+                          font=("Segoe UI", 8), padx=10, pady=4,
+                          cursor="hand2", anchor="w",
+                          command=lambda k=sleutel: self._raster_kies(k))
+            b.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0, 8),
+                   pady=2)
+            rgrid.columnconfigure(i % 2, weight=1)
+            self._raster_knoppen[sleutel] = b
+            self.knoppen.append(b)
+        rij = tk.Frame(sra, bg=KAART)
+        rij.pack(fill="x", pady=(4, 0))
+        tk.Label(rij, text="Aangepast:  rijen", bg=KAART, fg=TEKST,
+                 font=("Segoe UI", 9)).pack(side="left")
+        self.raster_r = tk.StringVar(
+            value=str(settings.get("cam_raster_rijen", 2)))
+        self.raster_k = tk.StringVar(
+            value=str(settings.get("cam_raster_kolommen", 2)))
+        tk.Entry(rij, textvariable=self.raster_r, width=4, relief="flat",
+                 bg="#f6f7f9", fg=TEKST, font=("Segoe UI", 9),
+                 highlightthickness=1, highlightbackground=BORDER,
+                 highlightcolor=ACCENT, justify="center").pack(
+                     side="left", padx=(4, 8), ipady=2)
+        tk.Label(rij, text="kolommen", bg=KAART, fg=TEKST,
+                 font=("Segoe UI", 9)).pack(side="left")
+        tk.Entry(rij, textvariable=self.raster_k, width=4, relief="flat",
+                 bg="#f6f7f9", fg=TEKST, font=("Segoe UI", 9),
+                 highlightthickness=1, highlightbackground=BORDER,
+                 highlightcolor=ACCENT, justify="center").pack(
+                     side="left", padx=(4, 8), ipady=2)
+        tk.Button(rij, text="Toepassen", relief="flat", bd=0, bg="#eef1f6",
+                  fg=TEKST, activebackground="#dfe5f0", font=("Segoe UI", 8),
+                  padx=10, pady=2, cursor="hand2",
+                  command=lambda: self._raster_kies("custom")).pack(
+                      side="left")
+        self._raster_markeer()
+
+        # --------------------------------------------- Google Nest camera's
+        sn = sectie("Google Nest camera's")
+        tk.Label(sn, text="Koppel je Google-account om Nest-camera's toe te "
+                          "voegen en te beheren.",
+                 bg=KAART, fg=MUTED, font=("Segoe UI", 8), wraplength=560,
+                 justify="left").pack(fill="x", pady=(0, 4))
+        nestcfg = nest.cfg()
+        self.nest_id_var = tk.StringVar(value=nestcfg["client_id"])
+        self.nest_sec_var = tk.StringVar(value=nestcfg["client_secret"])
+        self.nest_proj_var = tk.StringVar(value=nestcfg["project_id"])
+        for label, var, geheim in (("Client-ID:", self.nest_id_var, False),
+                                   ("Client-secret:", self.nest_sec_var, True),
+                                   ("Project-ID:", self.nest_proj_var, False)):
+            rij = tk.Frame(sn, bg=KAART)
+            rij.pack(fill="x", pady=1)
+            tk.Label(rij, text=label, bg=KAART, fg=TEKST, width=13,
+                     font=("Segoe UI", 9), anchor="w").pack(side="left")
+            tk.Entry(rij, textvariable=var, relief="flat", bg="#f6f7f9",
+                     fg=TEKST, show="•" if geheim else "",
+                     font=("Segoe UI", 9), highlightthickness=1,
+                     highlightbackground=BORDER, highlightcolor=ACCENT
+                     ).pack(side="left", fill="x", expand=True, ipady=2)
+        self.lbl_nest_status = tk.Label(sn, text="", bg=KAART,
+                                        font=("Segoe UI", 8), anchor="w")
+        self.lbl_nest_status.pack(fill="x", pady=(4, 2))
+        knoprij(sn, [("Opslaan", self._sla_nest_op),
+                     ("Inloggen met Google", self._nest_login),
+                     ("Camera's ophalen", self._nest_ophalen),
+                     ("Ontkoppelen", self._nest_ontkoppel),
+                     ("Handleiding", self._nest_handleiding),
+                     ("ℹ Instructies",
+                      lambda: nest.toon_instructies(self._inst_win))])
+        self._nest_status_ververs()
 
         footer = tk.Frame(win, bg=BG)
         footer.pack(fill="x", padx=12, pady=(0, 10))
@@ -1205,6 +1513,112 @@ class OnderhoudApp(tk.Tk):
         settings.set("altijd_voorgrond", aan)
         eufy.set_topmost(aan, self.logger.log)
 
+    def _menu_thema_wijzigen(self):
+        """Sla de themakeuze op en vraag om herstart voor consistente UI."""
+        gekozen = self.var_thema.get()
+        huidig = str(settings.get("ui_thema", "standaard"))
+        if gekozen == huidig:
+            return
+        settings.set("ui_thema", gekozen)
+        self.logger.log(f"Thema ingesteld op: {gekozen}.", "SUCCESS")
+        if messagebox.askyesno(
+                APP_NAAM,
+                "Het thema is opgeslagen. Nu opnieuw starten om het thema "
+                "volledig toe te passen?"):
+            self._herstart_app()
+
+    def _menu_office_ics_instellen(self):
+        """Snelle invoer van de Office ICS-link vanuit de menubalk."""
+        huidig = settings.get("office_agenda_ics", "")
+        url = simpledialog.askstring(
+            APP_NAAM,
+            "Voer de Outlook ICS-link in (http/https):",
+            initialvalue=huidig,
+            parent=self)
+        if url is None:
+            return
+        url = url.strip()
+        if url and not (url.lower().startswith("http://") or
+                        url.lower().startswith("https://")):
+            messagebox.showerror(APP_NAAM,
+                                 "ICS-link moet met http:// of https:// beginnen.")
+            return
+        settings.set("office_agenda_ics", url)
+        self.logger.log("Office agenda-link opgeslagen.", "SUCCESS")
+        if self._actieve_nav == "agenda":
+            self._toon_pagina("agenda")
+
+    def _menu_remote_wachtwoord_instellen(self):
+        """Snelle invoer voor vast remote-wachtwoord vanuit de menubalk."""
+        huidig = crypto.ontsleutel(settings.get("remote_wachtwoord", ""))
+        pw = simpledialog.askstring(
+            APP_NAAM,
+            "Vast remote-wachtwoord (leeg = willekeurig per sessie):",
+            initialvalue=huidig,
+            show="•",
+            parent=self)
+        if pw is None:
+            return
+        settings.set("remote_wachtwoord", crypto.versleutel(pw.strip()))
+        if pw.strip():
+            self.logger.log("Vast remote-wachtwoord opgeslagen.", "SUCCESS")
+        else:
+            self.logger.log("Vast remote-wachtwoord gewist.", "SUCCESS")
+
+    def _open_handleiding(self):
+        """Open de lokale handleiding (README) in de standaard editor."""
+        pad = os.path.join(os.path.dirname(__file__), "README.md")
+        if os.path.exists(pad):
+            os.startfile(pad)
+            self.logger.log("Handleiding geopend.", "INFO")
+        else:
+            messagebox.showwarning(APP_NAAM, "README.md niet gevonden.")
+
+    def _toon_over_dialog(self):
+        """Korte app-info met doel en kernfuncties."""
+        messagebox.showinfo(
+            f"Over {APP_NAAM}",
+            f"{APP_NAAM} v{__version__}\n\n"
+            "Toolkit voor onderhoud, updates, netwerktools, remote beheer "
+            "en camera/media-hulpmiddelen.\n\n"
+            "Alle instellingen en beheeracties zijn beschikbaar via de "
+            "menubalk bovenaan.")
+
+    def _toon_versie_info(self):
+        """Toon versie- en runtime-informatie van de huidige sessie."""
+        runtime = "PyInstaller EXE" if getattr(sys, "frozen", False) else "Python script"
+        messagebox.showinfo(
+            "Versie informatie",
+            f"Applicatie: {APP_NAAM}\n"
+            f"Versie: {__version__}\n"
+            f"Runtime: {runtime}\n"
+            f"Python: {sys.version.split()[0]}")
+
+    def _toon_nieuw_in_versie(self):
+        """Nieuwe UX-elementen van de huidige versie."""
+        messagebox.showinfo(
+            f"Nieuw in v{__version__}",
+            "- Nieuwe centrale menubalk (Bestand/Bewerken/Weergave/"
+            "Instellingen/Help).\n"
+            "- Instellingen direct bereikbaar via submenu's.\n"
+            "- Snelle invoer voor Office ICS-link en remote-wachtwoord.\n"
+            "- Thema-keuze (Standaard of Hoog contrast) met persistente "
+            "opslag.")
+
+    def _herstart_app(self):
+        """Herstart de applicatie met dezelfde opstartargumenten."""
+        try:
+            if getattr(sys, "frozen", False):
+                doel = os.path.abspath(sys.argv[0])
+                subprocess.Popen([doel] + sys.argv[1:], cwd=os.path.dirname(doel))
+            else:
+                subprocess.Popen([sys.executable, os.path.abspath(__file__)] +
+                                 sys.argv[1:])
+        except Exception as exc:
+            messagebox.showerror(APP_NAAM, f"Herstart mislukt: {exc}")
+            return
+        self.destroy()
+
     def _sla_remote_pw_op(self):
         """Bewaar het vaste remote-wachtwoord versleuteld in config.json."""
         pw = self.remote_pw_var.get().strip()
@@ -1489,8 +1903,8 @@ class OnderhoudApp(tk.Tk):
                  bg=KAART, fg=TEKST if n_cams else "#b45309",
                  font=("Segoe UI", 10, "bold")).pack(
                      side="left", padx=(0, 12))
-        knop(rij0, "Camera's beheren (via Instellingen)",
-             self._toon_instellingen_popup)
+        knop(rij0, "Camera's beheren",
+             self._toon_camera_instellingen_popup)
         tk.Label(f, text="Camera's toevoegen, bewerken, importeren en "
                          "ordenen doe je via het tandwiel (Instellingen) "
                          "rechtsboven; daar koppel je ook je Google-account "
@@ -1982,8 +2396,8 @@ class OnderhoudApp(tk.Tk):
                 elif msg[0] == "reboot":
                     self.lbl_reboot.config(text="⚠ Herstart aanbevolen")
                 elif msg[0] == "update_result":
-                    _, auto, res = msg
-                    self._update_resultaat(auto, res)
+                    _, auto, startup, res = msg
+                    self._update_resultaat(auto, startup, res)
                 elif msg[0] == "update_downloaded":
                     _, pad, versie = msg
                     self._update_gedownload(pad, versie)
@@ -2152,7 +2566,7 @@ class OnderhoudApp(tk.Tk):
     def _check_update_knop(self):
         self._update_check(auto=False)
 
-    def _update_check(self, auto: bool):
+    def _update_check(self, auto: bool, startup: bool = False):
         """Controleer in een thread of er een nieuwere versie op de server staat."""
         if self.running:
             return
@@ -2165,11 +2579,11 @@ class OnderhoudApp(tk.Tk):
             except Exception as exc:
                 self.logger.log(f"Updatecontrole fout: {exc}", "ERROR")
                 res = None
-            self.ui_queue.put(("update_result", auto, res))
+            self.ui_queue.put(("update_result", auto, startup, res))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _update_resultaat(self, auto: bool, res):
+    def _update_resultaat(self, auto: bool, startup: bool, res):
         """Verwerk het resultaat van de updatecontrole (UI-thread)."""
         self.running = False
         self._set_knoppen("normal")
@@ -2181,9 +2595,9 @@ class OnderhoudApp(tk.Tk):
         nieuwe_versie, sha = res
         self.logger.log(f"Nieuwe versie beschikbaar: v{nieuwe_versie} "
                         f"(huidig: v{__version__}).", "WARNING")
-        self.lbl_update.config(text=f"⬆ v{nieuwe_versie} beschikbaar")
+        self.lbl_update.config(text=f"⬇ Download v{nieuwe_versie}", fg=ACCENT)
         if auto:
-            return  # alleen melden, niet storen met popups
+            return
         if messagebox.askyesno(APP_NAAM,
                                f"Versie {nieuwe_versie} is beschikbaar.\n\n"
                                "Nu downloaden en installeren?"):
@@ -2208,7 +2622,7 @@ class OnderhoudApp(tk.Tk):
         self.logger.log("Browser geopend op de download-URL.", "INFO")
         messagebox.showinfo(
             APP_NAAM,
-            "De download van CharlesOnderhoud.exe start in je browser.\n\n"
+            "De download van CdR-Toolkit.exe start in je browser.\n\n"
             "Sluit daarna deze app en vervang de oude exe door het "
             "gedownloade bestand. Start de app daarna opnieuw.")
 
